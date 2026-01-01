@@ -102,6 +102,12 @@ class Config:
         instance.REGISTRY_SERVICE_URL = os.getenv(
             "REGISTRY_SERVICE_URL"
         )
+        
+        # Registry service SSL verification
+        # Default: False to work around expired certificates on app.secondme.io
+        # Set to True once the server certificate is renewed for better security
+        registry_ssl_verify = os.getenv("REGISTRY_SERVICE_SSL_VERIFY", "False")
+        instance.REGISTRY_SERVICE_SSL_VERIFY = registry_ssl_verify.lower() in ("true", "1", "yes")
 
         return instance
 

@@ -8,6 +8,7 @@ import asyncio
 from lpm_kernel.configs.config import Config
 import time
 import requests
+import ssl
 from lpm_kernel.api.common.responses import ResponseHandler
 from lpm_kernel.api.domains.loads.load_service import LoadService
 from typing import Optional, List, Dict
@@ -30,8 +31,37 @@ class HeartbeatConfig:
 
 class RegistryClient:
     def __init__(self, heartbeat_config: HeartbeatConfig = None):
-        config = Config.from_env()
-        self.server_url = config.get("REGISTRY_SERVICE_URL")
+        # Initialize SSL verify first with default value to ensure it's always set
+        self.ssl_verify = False  # Default to False to work around expired certificates
+        
+        try:
+            config = Config.from_env()
+            self.server_url = config.get("REGISTRY_SERVICE_URL")
+            
+            # SSL verification setting (default: False to work around expired certificates)
+            # Try multiple ways to get the config value
+            ssl_verify_value = None
+            # First try as attribute
+            if hasattr(config, 'REGISTRY_SERVICE_SSL_VERIFY'):
+                ssl_verify_value = getattr(config, 'REGISTRY_SERVICE_SSL_VERIFY')
+            # Then try via get() method
+            if ssl_verify_value is None:
+                ssl_verify_value = config.get("REGISTRY_SERVICE_SSL_VERIFY")
+            # Convert to boolean
+            if ssl_verify_value is not None:
+                if isinstance(ssl_verify_value, bool):
+                    self.ssl_verify = ssl_verify_value
+                elif isinstance(ssl_verify_value, str):
+                    self.ssl_verify = ssl_verify_value.lower() in ("true", "1", "yes")
+                else:
+                    self.ssl_verify = bool(ssl_verify_value)
+        except Exception as e:
+            logger.warning(f"Error loading SSL verification config, defaulting to False: {str(e)}")
+            self.ssl_verify = False
+        
+        if not self.ssl_verify:
+            logger.warning("SSL verification is disabled for registry service requests. This is a workaround for expired certificates. Once the server certificate is renewed, set REGISTRY_SERVICE_SSL_VERIFY=True for better security.")
+        
         # Convert HTTP URL to WebSocket URL
         self.ws_url = self.server_url.replace('http://', 'ws://').replace('https://', 'wss://')
         # Store all active WebSocket connections
@@ -95,7 +125,8 @@ class RegistryClient:
                 "description": description,
                 "email": email,
                 "tags": tags_dict
-            }
+            },
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
@@ -115,7 +146,8 @@ class RegistryClient:
         headers = self._get_auth_header()
         response = requests.delete(
             f"{self.server_url}/api/upload/{instance_id}",
-            headers=headers
+            headers=headers,
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
@@ -152,7 +184,15 @@ class RegistryClient:
         ws_uri = self.get_ws_url(instance_id, instance_password)
         try:
             logger.info(f"Connecting to WebSocket: {ws_uri}")
-            websocket = await websockets.connect(ws_uri)
+            # Handle SSL verification for WebSocket connections
+            ssl_context = None
+            if ws_uri.startswith('wss://'):
+                if not self.ssl_verify:
+                    # Create an unverified SSL context for wss:// connections
+                    ssl_context = ssl.SSLContext()
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+            websocket = await websockets.connect(ws_uri, ssl=ssl_context)
             logger.info(f"WebSocket connection established: {ws_uri}")
             
             # Add additional attributes to WebSocket connection
@@ -449,7 +489,8 @@ class RegistryClient:
         response = requests.get(
             f"{self.server_url}/api/upload/list",
             # headers=headers,
-            params=params
+            params=params,
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
@@ -464,6 +505,7 @@ class RegistryClient:
         """
         response = requests.get(
             f"{self.server_url}/api/upload/count",
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
@@ -491,7 +533,8 @@ class RegistryClient:
         headers = self._get_auth_header()
         response = requests.get(
             f"{self.server_url}/api/upload/{instance_id}",
-            headers=headers
+            headers=headers,
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
@@ -526,7 +569,8 @@ class RegistryClient:
         response = requests.put(
             f"{self.server_url}/api/upload/{instance_id}",
             headers=headers,
-            json=update_data
+            json=update_data,
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
@@ -565,7 +609,8 @@ class RegistryClient:
                 "icon": icon,
                 "enable_l0_retrieval": enable_l0_retrieval,
                 "enable_l1_retrieval": enable_l1_retrieval
-            }
+            },
+            verify=self.ssl_verify
         )
         return ResponseHandler.handle_response(
             response,
