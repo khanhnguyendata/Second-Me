@@ -15,6 +15,7 @@ services:
       - ./resources:/app/resources
       - ./docker:/app/docker
       - ./.env:/app/.env
+      - ./lpm_kernel:/app/lpm_kernel  # Mount source code for development
       - llama-cpp-build:/app/llama.cpp/build  # Persist the llama.cpp build
     environment:
       # Environment variables
@@ -30,7 +31,7 @@ services:
           memory: 64G
         reservations:
           # Memory reservation
-          memory: 6G
+          memory: 12G
     networks:
       - second-me-network
 

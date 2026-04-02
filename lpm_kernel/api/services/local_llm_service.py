@@ -441,6 +441,7 @@ class LocalLLMService:
             chunk = None
             start_time = time.time()
             chunk_count = 0
+            elapsed_time = 0.0  # Initialize elapsed_time to avoid UnboundLocalError
             
             try:
                 logger.info("[STREAM_DEBUG] Model response thread started")
@@ -506,6 +507,9 @@ class LocalLLMService:
                 
                 # Model processing is complete, send end marker
                 if chunk != "[DONE]":
+                    # Recalculate elapsed_time in case loop didn't execute
+                    if elapsed_time == 0.0 and chunk_count == 0:
+                        elapsed_time = time.time() - start_time
                     logger.info(f"[STREAM_DEBUG] Sending final [DONE] marker after {elapsed_time:.2f}s")
                     message_queue.put((b"data: [DONE]\n\n", "[DONE]"))
                 
